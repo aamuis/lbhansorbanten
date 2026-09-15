@@ -19,6 +19,7 @@ import {
 import { Navbar } from './components/Navbar';
 import { HeroBanner } from './components/HeroBanner';
 import { NearbyOffices } from './components/NearbyOffices';
+import { OrganizationStructure } from './components/OrganizationStructure';
 import { ArticleSection } from './components/ArticleSection';
 import { ArticleDetailView } from './components/ArticleDetailView';
 import { ConsultationFormModal } from './components/ConsultationFormModal';
@@ -309,10 +310,10 @@ export default function App() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="font-bold text-slate-900 text-sm sm:text-base leading-snug group-hover:text-emerald-800 transition-colors">
-                      Bebas Biaya (Pro Bono)
+                      {settings?.pillar1Title || 'Bebas Biaya (Pro Bono)'}
                     </h3>
                     <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                      Khidmah perbantuan hukum tanpa pungutan biaya bagi kaum mustadh'afin, buruh, petani, dan warga tidak mampu.
+                      {settings?.pillar1Desc || "Khidmah perbantuan hukum tanpa pungutan biaya bagi kaum mustadh'afin, buruh, petani, dan warga tidak mampu."}
                     </p>
                   </div>
                 </div>
@@ -324,10 +325,10 @@ export default function App() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="font-bold text-slate-900 text-sm sm:text-base leading-snug group-hover:text-emerald-800 transition-colors">
-                      Advokat Tersumpah
+                      {settings?.pillar2Title || 'Advokat Tersumpah'}
                     </h3>
                     <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                      Didukung puluhan advokat berpengalaman dan paralegal militan Ansor di 8 Kabupaten & Kota se-Provinsi Banten.
+                      {settings?.pillar2Desc || 'Didukung puluhan advokat berpengalaman dan paralegal militan Ansor di 8 Kabupaten & Kota se-Provinsi Banten.'}
                     </p>
                   </div>
                 </div>
@@ -339,10 +340,10 @@ export default function App() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <h3 className="font-bold text-slate-900 text-sm sm:text-base leading-snug group-hover:text-emerald-800 transition-colors">
-                      Notifikasi WhatsApp
+                      {settings?.pillar3Title || 'Notifikasi WhatsApp'}
                     </h3>
                     <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                      Sistem pembaruan status perkara otomatis langsung ke WhatsApp pemohon secara transparan dan akuntabel.
+                      {settings?.pillar3Desc || 'Sistem pembaruan status perkara otomatis langsung ke WhatsApp pemohon secara transparan dan akuntabel.'}
                     </p>
                   </div>
                 </div>
@@ -359,14 +360,14 @@ export default function App() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
                       <h3 className="font-bold text-slate-900 text-sm sm:text-base leading-snug group-hover:text-emerald-800 transition-colors">
-                        Tanya ABI (Asisten Pintar)
+                        {settings?.pillar4Title || 'Tanya ABI (Asisten Pintar)'}
                       </h3>
                       <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-full bg-emerald-800 text-amber-300">
                         24 Jam
                       </span>
                     </div>
                     <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                      Tanya jawab instan 24 jam dengan asisten cerdas LBH Ansor Banten berbasis hukum positif dan wawasan umum.
+                      {settings?.pillar4Desc || 'Tanya jawab instan 24 jam dengan asisten cerdas LBH Ansor Banten berbasis hukum positif dan wawasan umum.'}
                     </p>
                   </div>
                 </div>
@@ -374,6 +375,13 @@ export default function App() {
               </div>
             </div>
           </section>
+
+          {/* Struktur Organisasi Pimpinan Wilayah LBH Ansor Banten */}
+          <OrganizationStructure 
+            lawyers={lawyers} 
+            title={settings?.orgSectionTitle}
+            subtitle={settings?.orgSectionSubtitle}
+          />
 
           {/* Article & Educational Insights Section */}
           <ArticleSection
@@ -391,10 +399,10 @@ export default function App() {
                 <Scale className="w-6 h-6" />
               </div>
               <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold font-['Playfair_Display',serif]">
-                Jangan Hadapi Masalah Hukum Anda Sendirian
+                {settings?.ctaHeading || 'Jangan Hadapi Masalah Hukum Anda Sendirian'}
               </h2>
               <p className="text-sm sm:text-base text-emerald-200 max-w-2xl mx-auto">
-                LBH GP Ansor Banten hadir untuk memastikan keadilan tegak bagi seluruh lapisan masyarakat. Konsultasikan perkara Anda sekarang tanpa rasa cemas.
+                {settings?.ctaSubheading || 'LBH GP Ansor Banten hadir untuk memastikan keadilan tegak bagi seluruh lapisan masyarakat. Konsultasikan perkara Anda sekarang tanpa rasa cemas.'}
               </p>
               <div className="pt-2 flex flex-wrap gap-3 justify-center">
                 <button
@@ -404,7 +412,7 @@ export default function App() {
                   }}
                   className="px-6 py-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-emerald-950 font-extrabold text-sm shadow-lg transition-all cursor-pointer"
                 >
-                  Ajukan Konsultasi Online Sekarang
+                  {settings?.ctaButtonText || 'Ajukan Konsultasi Online Sekarang'}
                 </button>
                 <button
                   onClick={() => setIsChatbotOpen(true)}

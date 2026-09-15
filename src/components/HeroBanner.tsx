@@ -133,7 +133,11 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
             transition={{ delay: 0.3, duration: 0.8 }}
             className="lg:col-span-5 flex justify-center mt-6 lg:mt-0"
           >
-            <AnimatedLegalCenterpiece />
+            <AnimatedLegalCenterpiece 
+              logoUrl={settings.centerpieceLogoUrl} 
+              badgeText={settings.centerpieceBadge}
+              mottoText={settings.centerpieceMotto}
+            />
           </motion.div>
 
         </div>

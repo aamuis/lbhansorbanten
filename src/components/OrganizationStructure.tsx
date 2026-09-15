@@ -5,25 +5,31 @@ import { Lawyer } from '../types';
 
 interface OrganizationStructureProps {
   lawyers?: Lawyer[];
+  title?: string;
+  subtitle?: string;
 }
 
-export const OrganizationStructure: React.FC<OrganizationStructureProps> = ({ lawyers = [] }) => {
+export const OrganizationStructure: React.FC<OrganizationStructureProps> = ({ 
+  lawyers = [],
+  title = "Struktur Organisasi",
+  subtitle = "Pimpinan Wilayah Lembaga Bantuan Hukum Gerakan Pemuda Ansor Provinsi Banten masa khidmah yang berdedikasi mengawal keadilan bagi seluruh rakyat Banten."
+}) => {
   // Find specific executive leaders from lawyers state or use default verified data
-  const ketua = lawyers.find(l => l.role.toLowerCase().includes('ketua')) || {
+  const ketua = lawyers.find(l => l.id === 'law-rojak' || l.role.toLowerCase().includes('ketua')) || {
     id: 'law-rojak',
     name: 'Rojak, S.H.',
     role: 'Ketua LBH Ansor Banten',
     photoUrl: '/images/rojak_ketua.jpg',
   };
 
-  const sekretaris = lawyers.find(l => l.role.toLowerCase().includes('sekretaris')) || {
+  const sekretaris = lawyers.find(l => l.id === 'law-mulhat' || l.role.toLowerCase().includes('sekretaris')) || {
     id: 'law-mulhat',
-    name: 'Mulhat, S.H.,M.H.',
+    name: 'Mulhat, S.H., M.H.',
     role: 'Sekretaris LBH Ansor Banten',
     photoUrl: '/images/mulhat_sekretaris.jpg',
   };
 
-  const bendahara = lawyers.find(l => l.role.toLowerCase().includes('bendahara')) || {
+  const bendahara = lawyers.find(l => l.id === 'law-dede' || l.role.toLowerCase().includes('bendahara')) || {
     id: 'law-dede',
     name: 'Dede Maulana Pasial, S.H., MH',
     role: 'Bendahara LBH Ansor Banten',
@@ -34,21 +40,21 @@ export const OrganizationStructure: React.FC<OrganizationStructureProps> = ({ la
     {
       id: ketua.id,
       name: ketua.name,
-      role: 'Ketua LBH Ansor Banten',
+      role: ketua.role || 'Ketua LBH Ansor Banten',
       photoUrl: ketua.photoUrl || '/images/rojak_ketua.jpg',
       badge: 'Pimpinan Wilayah',
     },
     {
       id: sekretaris.id,
       name: sekretaris.name,
-      role: 'Sekretaris LBH Ansor Banten',
+      role: sekretaris.role || 'Sekretaris LBH Ansor Banten',
       photoUrl: sekretaris.photoUrl || '/images/mulhat_sekretaris.jpg',
       badge: 'Pimpinan Wilayah',
     },
     {
       id: bendahara.id,
       name: bendahara.name,
-      role: 'Bendahara LBH Ansor Banten',
+      role: bendahara.role || 'Bendahara LBH Ansor Banten',
       photoUrl: bendahara.photoUrl || '/images/dede_bendahara.jpg',
       badge: 'Pimpinan Wilayah',
     },
@@ -67,11 +73,11 @@ export const OrganizationStructure: React.FC<OrganizationStructureProps> = ({ la
             transition={{ duration: 0.5 }}
           >
             <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-emerald-950 font-['Playfair_Display',serif] tracking-tight">
-              Struktur Organisasi
+              {title}
             </h2>
             <div className="w-16 h-1 bg-amber-400 mx-auto mt-4 rounded-full" />
             <p className="mt-4 text-sm sm:text-base text-slate-600 leading-relaxed">
-              Pimpinan Wilayah Lembaga Bantuan Hukum Gerakan Pemuda Ansor Provinsi Banten masa khidmah yang berdedikasi mengawal keadilan bagi seluruh rakyat Banten.
+              {subtitle}
             </p>
           </motion.div>
         </div>

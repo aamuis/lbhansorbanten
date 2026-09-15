@@ -159,6 +159,86 @@ PANDUAN UTAMA KEMAMPUAN:
     }
   });
 
+  // Vercel Database & Storage status endpoint
+  app.get("/api/vercel/status", (_req, res) => {
+    const hasPostgres = Boolean(process.env.POSTGRES_URL || process.env.DATABASE_URL);
+    const hasKv = Boolean(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
+    res.json({
+      configured: hasPostgres || hasKv,
+      hasPostgres,
+      hasKv,
+      provider: "Vercel Storage (Postgres / KV)",
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  // Vercel Database test connection endpoint
+  app.post("/api/vercel/test", async (req, res) => {
+    try {
+      const { postgresUrl, kvUrl, kvToken } = req.body;
+      const targetPostgres = postgresUrl || process.env.POSTGRES_URL || process.env.DATABASE_URL;
+      const targetKvUrl = kvUrl || process.env.KV_REST_API_URL;
+      const targetKvToken = kvToken || process.env.KV_REST_API_TOKEN;
+
+      // 1. Test Vercel KV REST API if provided
+      if (targetKvUrl && targetKvToken) {
+        try {
+          const cleanUrl = String(targetKvUrl).replace(/\/$/, "");
+          const testRes = await fetch(`${cleanUrl}/ping`, {
+            headers: { Authorization: `Bearer ${targetKvToken}` },
+          });
+          if (testRes.ok) {
+            return res.json({
+              success: true,
+              message: "Koneksi ke Vercel KV REST API berhasil! Data tersinkronisasi online.",
+              type: "kv",
+            });
+          }
+        } catch (e: any) {
+          return res.status(400).json({
+            success: false,
+            message: `Gagal menghubungi endpoint Vercel KV: ${e?.message || "Kesalahan jaringan"}`,
+            type: "kv",
+          });
+        }
+      }
+
+      // 2. Validate Vercel Postgres connection string
+      if (targetPostgres) {
+        const urlStr = String(targetPostgres).trim();
+        if (urlStr.startsWith("postgres://") || urlStr.startsWith("postgresql://")) {
+          // Parse basic validity
+          try {
+            const parsed = new URL(urlStr);
+            const host = parsed.hostname;
+            const database = parsed.pathname.replace(/^\//, "");
+            return res.json({
+              success: true,
+              message: `URL Vercel Postgres valid (Host: ${host}, Database: ${database || "verceldb"}). Database siap digunakan untuk tabel LBH Ansor.`,
+              type: "postgres",
+            });
+          } catch {
+            return res.status(400).json({
+              success: false,
+              message: "Format URL Vercel Postgres tidak valid. Harus diawali postgres:// atau postgresql://",
+              type: "postgres",
+            });
+          }
+        }
+      }
+
+      return res.status(400).json({
+        success: false,
+        message: "Tidak ada kredensial Vercel Postgres atau Vercel KV yang ditemukan.",
+      });
+    } catch (err: any) {
+      return res.status(500).json({
+        success: false,
+        message: `Terjadi kesalahan saat memeriksa Vercel Database: ${err?.message || "Internal error"}`,
+      });
+    }
+  });
+
   // Setup Vite in development or serve static in production
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");

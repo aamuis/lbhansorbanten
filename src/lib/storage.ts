@@ -14,7 +14,11 @@ import {
   initialLawyers, 
   initialBranches 
 } from '../data/initialData';
-import { getSupabaseClient, SUPABASE_TABLES } from './supabase';
+import { 
+  isVercelDbConfigured, 
+  saveToVercelKv, 
+  loadFromVercelKv 
+} from './vercelDb';
 
 const KEYS = {
   SETTINGS: 'lbh_ansor_settings_v2',
@@ -47,21 +51,23 @@ function safeSet<T>(key: string, data: T): void {
 
 // ---------------- Site Settings ----------------
 export function getStoredSettings(): SiteSettings {
-  return safeGet<SiteSettings>(KEYS.SETTINGS, initialSiteSettings);
+  const stored = safeGet<SiteSettings>(KEYS.SETTINGS, initialSiteSettings);
+  const merged: SiteSettings = { ...initialSiteSettings, ...stored };
+  if (merged.centerpieceLogoUrl === '/images/lbh_ansor_logo.jpg' || !merged.centerpieceLogoUrl) {
+    merged.centerpieceLogoUrl = '/images/logo_lbh_ansor_official.svg';
+  }
+  return merged;
 }
 
 export async function saveStoredSettings(settings: SiteSettings): Promise<void> {
   safeSet(KEYS.SETTINGS, settings);
 
-  // Sync to Supabase if connected
-  const supabase = getSupabaseClient();
-  if (supabase) {
+  // Sync to Vercel KV / Vercel Database if configured
+  if (isVercelDbConfigured()) {
     try {
-      await supabase
-        .from(SUPABASE_TABLES.SETTINGS)
-        .upsert({ id: 'default_settings', data: settings, updated_at: new Date().toISOString() });
+      await saveToVercelKv('lbh_settings', settings);
     } catch (err) {
-      console.warn('Supabase sync settings error:', err);
+      console.warn('Vercel sync settings error:', err);
     }
   }
 }
@@ -69,7 +75,7 @@ export async function saveStoredSettings(settings: SiteSettings): Promise<void> 
 // ---------------- Menu Items ----------------
 export function getStoredMenuItems(): MenuItem[] {
   const items = safeGet<MenuItem[]>(KEYS.MENU_ITEMS, initialMenuItems);
-  const filtered = items.filter(m => m.href !== '#posko' && m.href !== '#advokat');
+  const filtered = items.filter(m => m.href !== '#posko' && m.href !== '#advokat' && m.href !== '#cek-status');
   return filtered;
 }
 
@@ -87,31 +93,12 @@ export async function addStoredCase(newCase: CaseConsultation): Promise<void> {
   const updated = [newCase, ...current];
   safeSet(KEYS.CASES, updated);
 
-  const supabase = getSupabaseClient();
-  if (supabase) {
+  // Sync to Vercel Database if configured
+  if (isVercelDbConfigured()) {
     try {
-      await supabase.from(SUPABASE_TABLES.CASES).insert({
-        id: newCase.id,
-        ticket_number: newCase.ticketNumber,
-        client_name: newCase.clientName,
-        client_phone: newCase.clientPhone,
-        client_email: newCase.clientEmail,
-        id_card_number: newCase.idCardNumber,
-        regency: newCase.regency,
-        category: newCase.category,
-        case_title: newCase.caseTitle,
-        chronology: newCase.chronology,
-        evidence_url: newCase.evidenceUrl,
-        evidence_file_name: newCase.evidenceFileName,
-        status: newCase.status,
-        status_notes: newCase.statusNotes,
-        assigned_lawyer_id: newCase.assignedLawyerId,
-        assigned_lawyer_name: newCase.assignedLawyerName,
-        created_at: newCase.createdAt,
-        updated_at: newCase.updatedAt,
-      });
+      await saveToVercelKv('lbh_cases', updated);
     } catch (err) {
-      console.warn('Supabase insert case error:', err);
+      console.warn('Vercel sync insert case error:', err);
     }
   }
 }
@@ -121,25 +108,23 @@ export async function updateStoredCase(updatedCase: CaseConsultation): Promise<v
   const updated = current.map(c => c.id === updatedCase.id ? updatedCase : c);
   safeSet(KEYS.CASES, updated);
 
-  const supabase = getSupabaseClient();
-  if (supabase) {
+  if (isVercelDbConfigured()) {
     try {
-      await supabase.from(SUPABASE_TABLES.CASES).update({
-        status: updatedCase.status,
-        status_notes: updatedCase.statusNotes,
-        assigned_lawyer_id: updatedCase.assignedLawyerId,
-        assigned_lawyer_name: updatedCase.assignedLawyerName,
-        updated_at: new Date().toISOString(),
-      }).eq('id', updatedCase.id);
+      await saveToVercelKv('lbh_cases', updated);
     } catch (err) {
-      console.warn('Supabase update case error:', err);
+      console.warn('Vercel sync update case error:', err);
     }
   }
 }
 
 export function deleteStoredCase(id: string): void {
   const current = getStoredCases();
-  safeSet(KEYS.CASES, current.filter(c => c.id !== id));
+  const updated = current.filter(c => c.id !== id);
+  safeSet(KEYS.CASES, updated);
+
+  if (isVercelDbConfigured()) {
+    saveToVercelKv('lbh_cases', updated).catch(() => {});
+  }
 }
 
 // ---------------- Articles ----------------
@@ -163,37 +148,38 @@ export async function saveStoredArticle(article: Article): Promise<void> {
     : [article, ...current];
   safeSet(KEYS.ARTICLES, updated);
 
-  const supabase = getSupabaseClient();
-  if (supabase) {
+  if (isVercelDbConfigured()) {
     try {
-      await supabase.from(SUPABASE_TABLES.ARTICLES).upsert({
-        id: article.id,
-        slug: article.slug,
-        title: article.title,
-        category: article.category,
-        summary: article.summary,
-        content: article.content,
-        image_url: article.imageUrl,
-        author: article.author,
-        author_role: article.authorRole,
-        published_at: article.publishedAt,
-        read_time_minutes: article.readTimeMinutes,
-        tags: article.tags,
-      });
+      await saveToVercelKv('lbh_articles', updated);
     } catch (err) {
-      console.warn('Supabase upsert article error:', err);
+      console.warn('Vercel sync article error:', err);
     }
   }
 }
 
 export function deleteStoredArticle(id: string): void {
   const current = getStoredArticles();
-  safeSet(KEYS.ARTICLES, current.filter(a => a.id !== id));
+  const updated = current.filter(a => a.id !== id);
+  safeSet(KEYS.ARTICLES, updated);
+
+  if (isVercelDbConfigured()) {
+    saveToVercelKv('lbh_articles', updated).catch(() => {});
+  }
 }
 
 // ---------------- Lawyers ----------------
 export function getStoredLawyers(): Lawyer[] {
-  return safeGet<Lawyer[]>(KEYS.LAWYERS, initialLawyers);
+  const stored = safeGet<Lawyer[]>(KEYS.LAWYERS, initialLawyers);
+  const storedIds = new Set(stored.map(l => l.id));
+  const coreLeaderIds = ['law-rojak', 'law-mulhat', 'law-dede'];
+  const missingLeaders = initialLawyers.filter(l => coreLeaderIds.includes(l.id) && !storedIds.has(l.id));
+  
+  if (missingLeaders.length > 0) {
+    const merged = [...missingLeaders, ...stored];
+    safeSet(KEYS.LAWYERS, merged);
+    return merged;
+  }
+  return stored;
 }
 
 export function saveStoredLawyer(lawyer: Lawyer): void {
@@ -203,11 +189,20 @@ export function saveStoredLawyer(lawyer: Lawyer): void {
     ? current.map(l => l.id === lawyer.id ? lawyer : l)
     : [...current, lawyer];
   safeSet(KEYS.LAWYERS, updated);
+
+  if (isVercelDbConfigured()) {
+    saveToVercelKv('lbh_lawyers', updated).catch(() => {});
+  }
 }
 
 export function deleteStoredLawyer(id: string): void {
   const current = getStoredLawyers();
-  safeSet(KEYS.LAWYERS, current.filter(l => l.id !== id));
+  const updated = current.filter(l => l.id !== id);
+  safeSet(KEYS.LAWYERS, updated);
+
+  if (isVercelDbConfigured()) {
+    saveToVercelKv('lbh_lawyers', updated).catch(() => {});
+  }
 }
 
 // ---------------- Branches ----------------
@@ -222,11 +217,20 @@ export function saveStoredBranch(branch: BranchOffice): void {
     ? current.map(b => b.id === branch.id ? branch : b)
     : [...current, branch];
   safeSet(KEYS.BRANCHES, updated);
+
+  if (isVercelDbConfigured()) {
+    saveToVercelKv('lbh_branches', updated).catch(() => {});
+  }
 }
 
 export function deleteStoredBranch(id: string): void {
   const current = getStoredBranches();
-  safeSet(KEYS.BRANCHES, current.filter(b => b.id !== id));
+  const updated = current.filter(b => b.id !== id);
+  safeSet(KEYS.BRANCHES, updated);
+
+  if (isVercelDbConfigured()) {
+    saveToVercelKv('lbh_branches', updated).catch(() => {});
+  }
 }
 
 // Generate next unique ticket number
@@ -238,8 +242,6 @@ export function generateTicketNumber(): string {
 
 // ---------------- Unified Bulk Helpers for App.tsx ----------------
 export async function loadInitialData() {
-  const supabase = getSupabaseClient();
-
   let cases = getStoredCases();
   let articles = getStoredArticles();
   let lawyers = getStoredLawyers();
@@ -247,57 +249,31 @@ export async function loadInitialData() {
   let settings = getStoredSettings();
   let menuItems = getStoredMenuItems();
 
-  // If Supabase is active, attempt to fetch live remote data
-  if (supabase) {
+  // If Vercel Database is active, attempt to fetch live remote data from Vercel KV / Storage
+  if (isVercelDbConfigured()) {
     try {
-      const [casesRes, articlesRes] = await Promise.all([
-        supabase.from(SUPABASE_TABLES.CASES).select('*'),
-        supabase.from(SUPABASE_TABLES.ARTICLES).select('*'),
+      const [remoteCases, remoteArticles, remoteSettings] = await Promise.all([
+        loadFromVercelKv<CaseConsultation[]>('lbh_cases'),
+        loadFromVercelKv<Article[]>('lbh_articles'),
+        loadFromVercelKv<SiteSettings>('lbh_settings'),
       ]);
 
-      if (casesRes.data && casesRes.data.length > 0) {
-        cases = casesRes.data.map((c: any) => ({
-          id: c.id,
-          ticketNumber: c.ticket_number,
-          clientName: c.client_name,
-          clientPhone: c.client_phone,
-          clientEmail: c.client_email,
-          idCardNumber: c.id_card_number,
-          regency: c.regency,
-          category: c.category,
-          caseTitle: c.case_title,
-          chronology: c.chronology,
-          evidenceUrl: c.evidence_url,
-          evidenceFileName: c.evidence_file_name,
-          status: c.status,
-          statusNotes: c.status_notes,
-          assignedLawyerId: c.assigned_lawyer_id,
-          assignedLawyerName: c.assigned_lawyer_name,
-          createdAt: c.created_at,
-          updatedAt: c.updated_at,
-        }));
+      if (remoteCases && Array.isArray(remoteCases) && remoteCases.length > 0) {
+        cases = remoteCases;
         safeSet(KEYS.CASES, cases);
       }
 
-      if (articlesRes.data && articlesRes.data.length > 0) {
-        articles = articlesRes.data.map((a: any) => ({
-          id: a.id,
-          slug: a.slug,
-          title: a.title,
-          category: a.category,
-          summary: a.summary,
-          content: a.content,
-          imageUrl: a.image_url,
-          author: a.author,
-          authorRole: a.author_role,
-          publishedAt: a.published_at,
-          readTimeMinutes: a.read_time_minutes,
-          tags: a.tags || [],
-        }));
+      if (remoteArticles && Array.isArray(remoteArticles) && remoteArticles.length > 0) {
+        articles = remoteArticles;
         safeSet(KEYS.ARTICLES, articles);
       }
+
+      if (remoteSettings && typeof remoteSettings === 'object') {
+        settings = { ...settings, ...remoteSettings };
+        safeSet(KEYS.SETTINGS, settings);
+      }
     } catch (err) {
-      console.warn('Supabase remote fetch warning, falling back to local storage:', err);
+      console.warn('Vercel remote fetch warning, falling back to local storage:', err);
     }
   }
 
@@ -313,18 +289,30 @@ export async function loadInitialData() {
 
 export async function saveCasesToStorage(cases: CaseConsultation[]): Promise<void> {
   safeSet(KEYS.CASES, cases);
+  if (isVercelDbConfigured()) {
+    saveToVercelKv('lbh_cases', cases).catch(() => {});
+  }
 }
 
 export async function saveArticlesToStorage(articles: Article[]): Promise<void> {
   safeSet(KEYS.ARTICLES, articles);
+  if (isVercelDbConfigured()) {
+    saveToVercelKv('lbh_articles', articles).catch(() => {});
+  }
 }
 
 export async function saveLawyersToStorage(lawyers: Lawyer[]): Promise<void> {
   safeSet(KEYS.LAWYERS, lawyers);
+  if (isVercelDbConfigured()) {
+    saveToVercelKv('lbh_lawyers', lawyers).catch(() => {});
+  }
 }
 
 export async function saveBranchesToStorage(branches: BranchOffice[]): Promise<void> {
   safeSet(KEYS.BRANCHES, branches);
+  if (isVercelDbConfigured()) {
+    saveToVercelKv('lbh_branches', branches).catch(() => {});
+  }
 }
 
 export async function saveSettingsToStorage(settings: SiteSettings): Promise<void> {
@@ -334,4 +322,3 @@ export async function saveSettingsToStorage(settings: SiteSettings): Promise<voi
 export async function saveMenuItemsToStorage(menuItems: MenuItem[]): Promise<void> {
   safeSet(KEYS.MENU_ITEMS, menuItems);
 }
-

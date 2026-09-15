@@ -105,9 +105,33 @@ export interface SiteSettings {
   adminPin: string;
   // Centerpiece Fiat Justitia Ruat Caelum Logo / Photo
   centerpieceLogoUrl?: string;
-  // Vercel Database Config (Vercel Postgres & Storage)
+  centerpieceBadge?: string;
+  centerpieceMotto?: string;
+  centerpieceSubheading?: string;
+
+  // 4 Pilar Section Customization
+  pillar1Title?: string;
+  pillar1Desc?: string;
+  pillar2Title?: string;
+  pillar2Desc?: string;
+  pillar3Title?: string;
+  pillar3Desc?: string;
+  pillar4Title?: string;
+  pillar4Desc?: string;
+
+  // CTA Section Customization
+  ctaHeading?: string;
+  ctaSubheading?: string;
+  ctaButtonText?: string;
+
+  // Organization Section Customization
+  orgSectionTitle?: string;
+  orgSectionSubtitle?: string;
+
+  // Vercel Database Config (Vercel Postgres & Vercel KV)
   vercelPostgresUrl?: string;
-  vercelStorageToken?: string;
+  vercelKvUrl?: string;
+  vercelKvToken?: string;
 }
 
 export interface ChatMessage {
