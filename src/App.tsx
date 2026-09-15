@@ -130,79 +130,104 @@ export default function App() {
 
   // Case submission handler
   const handleCaseSubmit = async (newCase: CaseConsultation) => {
-    const updated = [newCase, ...cases];
-    setCases(updated);
-    await saveCasesToStorage(updated);
+    setCases(prev => {
+      const updated = [newCase, ...prev];
+      saveCasesToStorage(updated);
+      return updated;
+    });
   };
 
   // Case update handler (from Admin)
   const handleCaseUpdate = async (updatedCase: CaseConsultation) => {
-    const updated = cases.map(c => c.id === updatedCase.id ? updatedCase : c);
-    setCases(updated);
-    await saveCasesToStorage(updated);
+    setCases(prev => {
+      const updated = prev.map(c => c.id === updatedCase.id ? updatedCase : c);
+      saveCasesToStorage(updated);
+      return updated;
+    });
   };
 
   const handleCaseDelete = async (id: string) => {
-    const updated = cases.filter(c => c.id !== id);
-    setCases(updated);
-    await saveCasesToStorage(updated);
+    setCases(prev => {
+      const updated = prev.filter(c => c.id !== id);
+      saveCasesToStorage(updated);
+      return updated;
+    });
   };
 
   // Article handlers
   const handleSaveArticle = async (article: Article) => {
-    const exists = articles.find(a => a.id === article.id);
-    let updated: Article[];
-    if (exists) {
-      updated = articles.map(a => a.id === article.id ? article : a);
-    } else {
-      updated = [article, ...articles];
-    }
-    setArticles(updated);
-    await saveArticlesToStorage(updated);
+    setArticles(prev => {
+      const exists = prev.some(a => a.id === article.id);
+      const updated = exists
+        ? prev.map(a => a.id === article.id ? article : a)
+        : [article, ...prev];
+      saveArticlesToStorage(updated);
+      return updated;
+    });
   };
 
   const handleDeleteArticle = async (id: string) => {
-    const updated = articles.filter(a => a.id !== id);
-    setArticles(updated);
-    await saveArticlesToStorage(updated);
+    setArticles(prev => {
+      const updated = prev.filter(a => a.id !== id);
+      saveArticlesToStorage(updated);
+      return updated;
+    });
   };
 
   // Lawyer handlers
   const handleSaveLawyer = async (lawyer: Lawyer) => {
-    const exists = lawyers.find(l => l.id === lawyer.id);
-    let updated: Lawyer[];
-    if (exists) {
-      updated = lawyers.map(l => l.id === lawyer.id ? lawyer : l);
-    } else {
-      updated = [...lawyers, lawyer];
-    }
-    setLawyers(updated);
-    await saveLawyersToStorage(updated);
+    setLawyers(prev => {
+      const exists = prev.some(l => l.id === lawyer.id);
+      const updated = exists
+        ? prev.map(l => l.id === lawyer.id ? lawyer : l)
+        : [...prev, lawyer];
+      saveLawyersToStorage(updated);
+      return updated;
+    });
+  };
+
+  const handleSaveMultipleLawyers = async (updatedLawyers: Lawyer[]) => {
+    setLawyers(prev => {
+      let current = [...prev];
+      for (const item of updatedLawyers) {
+        const idx = current.findIndex(l => l.id === item.id);
+        if (idx >= 0) {
+          current[idx] = item;
+        } else {
+          current.push(item);
+        }
+      }
+      saveLawyersToStorage(current);
+      return current;
+    });
   };
 
   const handleDeleteLawyer = async (id: string) => {
-    const updated = lawyers.filter(l => l.id !== id);
-    setLawyers(updated);
-    await saveLawyersToStorage(updated);
+    setLawyers(prev => {
+      const updated = prev.filter(l => l.id !== id);
+      saveLawyersToStorage(updated);
+      return updated;
+    });
   };
 
   // Branch handlers
   const handleSaveBranch = async (branch: BranchOffice) => {
-    const exists = branches.find(b => b.id === branch.id);
-    let updated: BranchOffice[];
-    if (exists) {
-      updated = branches.map(b => b.id === branch.id ? branch : b);
-    } else {
-      updated = [...branches, branch];
-    }
-    setBranches(updated);
-    await saveBranchesToStorage(updated);
+    setBranches(prev => {
+      const exists = prev.some(b => b.id === branch.id);
+      const updated = exists
+        ? prev.map(b => b.id === branch.id ? branch : b)
+        : [...prev, branch];
+      saveBranchesToStorage(updated);
+      return updated;
+    });
   };
 
   const handleDeleteBranch = async (id: string) => {
-    const updated = branches.filter(b => b.id !== id);
-    setBranches(updated);
-    await saveBranchesToStorage(updated);
+    setBranches(prev => {
+      const updated = prev.filter(b => b.id !== id);
+      saveBranchesToStorage(updated);
+      return updated;
+    });
   };
 
   // Settings handler
@@ -242,6 +267,7 @@ export default function App() {
         onDeleteArticle={handleDeleteArticle}
         lawyers={lawyers}
         onSaveLawyer={handleSaveLawyer}
+        onSaveMultipleLawyers={handleSaveMultipleLawyers}
         onDeleteLawyer={handleDeleteLawyer}
         branches={branches}
         onSaveBranch={handleSaveBranch}

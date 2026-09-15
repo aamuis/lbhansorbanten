@@ -15,21 +15,21 @@ export const OrganizationStructure: React.FC<OrganizationStructureProps> = ({
   subtitle = "Pimpinan Wilayah Lembaga Bantuan Hukum Gerakan Pemuda Ansor Provinsi Banten masa khidmah yang berdedikasi mengawal keadilan bagi seluruh rakyat Banten."
 }) => {
   // Find specific executive leaders from lawyers state or use default verified data
-  const ketua = lawyers.find(l => l.id === 'law-rojak' || l.role.toLowerCase().includes('ketua')) || {
+  const ketua = lawyers.find(l => l.id === 'law-rojak') || lawyers.find(l => l.role.toLowerCase().includes('ketua')) || {
     id: 'law-rojak',
     name: 'Rojak, S.H.',
     role: 'Ketua LBH Ansor Banten',
     photoUrl: '/images/rojak_ketua.jpg',
   };
 
-  const sekretaris = lawyers.find(l => l.id === 'law-mulhat' || l.role.toLowerCase().includes('sekretaris')) || {
+  const sekretaris = lawyers.find(l => l.id === 'law-mulhat') || lawyers.find(l => l.role.toLowerCase().includes('sekretaris')) || {
     id: 'law-mulhat',
     name: 'Mulhat, S.H., M.H.',
     role: 'Sekretaris LBH Ansor Banten',
     photoUrl: '/images/mulhat_sekretaris.jpg',
   };
 
-  const bendahara = lawyers.find(l => l.id === 'law-dede' || l.role.toLowerCase().includes('bendahara')) || {
+  const bendahara = lawyers.find(l => l.id === 'law-dede') || lawyers.find(l => l.role.toLowerCase().includes('bendahara')) || {
     id: 'law-dede',
     name: 'Dede Maulana Pasial, S.H., MH',
     role: 'Bendahara LBH Ansor Banten',

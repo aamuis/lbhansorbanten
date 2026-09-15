@@ -43,6 +43,7 @@ import {
 } from '../types';
 import { getWhatsAppSendUrl, getStatusLabelIndonesian } from '../lib/whatsapp';
 import { testVercelConnection, getVercelPostgresSqlSchema, isVercelDbConfigured } from '../lib/vercelDb';
+import { compressImage, getApproximateDataUrlSize } from '../lib/imageCompressor';
 
 // Reusable Image Uploader with Computer Upload (Base64) and Preset Logo Support
 interface ImageUploadFieldProps {
@@ -63,28 +64,56 @@ const ImageUploadField: React.FC<ImageUploadFieldProps> = ({
   previewHeight = "h-14 w-14" 
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 8 * 1024 * 1024) {
-      alert('Ukuran file gambar terlalu besar (maks 8MB). Silakan pilih gambar lain.');
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        onChange(reader.result);
+    try {
+      setIsProcessing(true);
+      // Auto compress and optimize image to ensure it fits safely in storage and Vercel KV
+      const compressed = await compressImage(file, {
+        maxWidth: 960,
+        maxHeight: 960,
+        quality: 0.82
+      });
+      onChange(compressed);
+    } catch (err) {
+      console.error('Compression error, falling back:', err);
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          onChange(reader.result);
+        }
+      };
+      reader.readAsDataURL(file);
+    } finally {
+      setIsProcessing(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
       }
-    };
-    reader.readAsDataURL(file);
+    }
   };
+
+  const imageSize = getApproximateDataUrlSize(value);
 
   return (
     <div className="space-y-1.5">
-      <label className="block font-bold text-slate-700 text-xs">{label}</label>
+      <div className="flex items-center justify-between">
+        <label className="block font-bold text-slate-700 text-xs">{label}</label>
+        {isProcessing && (
+          <span className="text-[10px] text-amber-600 font-semibold animate-pulse flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+            Mengompres & memproses gambar...
+          </span>
+        )}
+        {!isProcessing && imageSize && (
+          <span className="text-[10px] text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 font-medium">
+            Tersimpan: {imageSize} (Optimal)
+          </span>
+        )}
+      </div>
       <div className="flex flex-col sm:flex-row gap-2.5 items-start sm:items-center">
         {/* Preview Thumbnail */}
         <div className={`${previewHeight} rounded-xl bg-emerald-950/90 border-2 border-amber-400/80 p-1 flex items-center justify-center shrink-0 overflow-hidden shadow-xs relative group`}>
@@ -121,12 +150,13 @@ const ImageUploadField: React.FC<ImageUploadFieldProps> = ({
             />
             <button
               type="button"
+              disabled={isProcessing}
               onClick={() => fileInputRef.current?.click()}
-              className="px-3.5 py-2 bg-emerald-800 hover:bg-emerald-900 text-white rounded-xl text-xs font-bold shrink-0 flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+              className="px-3.5 py-2 bg-emerald-800 hover:bg-emerald-900 disabled:opacity-50 text-white rounded-xl text-xs font-bold shrink-0 flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
               title="Upload file gambar dari perangkat Anda"
             >
               <Upload className="w-3.5 h-3.5 text-amber-300" />
-              <span>Upload Gambar</span>
+              <span>{isProcessing ? 'Memproses...' : 'Upload Gambar'}</span>
             </button>
           </div>
 
@@ -168,6 +198,7 @@ interface AdminDashboardProps {
   onDeleteArticle: (id: string) => void;
   lawyers: Lawyer[];
   onSaveLawyer: (lawyer: Lawyer) => void;
+  onSaveMultipleLawyers?: (lawyers: Lawyer[]) => Promise<void>;
   onDeleteLawyer: (id: string) => void;
   branches: BranchOffice[];
   onSaveBranch: (branch: BranchOffice) => void;
@@ -188,6 +219,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onDeleteArticle,
   lawyers,
   onSaveLawyer,
+  onSaveMultipleLawyers,
   onDeleteLawyer,
   branches,
   onSaveBranch,
@@ -236,7 +268,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Executive Leadership State (Pimpinan Wilayah: Ketua, Sekretaris, Bendahara)
   const getExecLeader = (roleKeyword: string, fallbackId: string, fallbackName: string, fallbackRole: string, fallbackPhoto: string) => {
-    return lawyers.find(l => l.id === fallbackId || l.role.toLowerCase().includes(roleKeyword)) || {
+    return lawyers.find(l => l.id === fallbackId) || 
+           lawyers.find(l => l.role.toLowerCase().includes(roleKeyword)) || {
       id: fallbackId,
       name: fallbackName,
       title: 'S.H.',
@@ -255,20 +288,34 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [execSekretaris, setExecSekretaris] = useState<Lawyer>(() => getExecLeader('sekretaris', 'law-mulhat', 'Mulhat, S.H., M.H.', 'Sekretaris LBH Ansor Banten', '/images/mulhat_sekretaris.jpg'));
   const [execBendahara, setExecBendahara] = useState<Lawyer>(() => getExecLeader('bendahara', 'law-dede', 'Dede Maulana Pasial, S.H., MH', 'Bendahara LBH Ansor Banten', '/images/dede_bendahara.jpg'));
   const [execLeadersSaveMsg, setExecLeadersSaveMsg] = useState('');
+  const [isSavingLeaders, setIsSavingLeaders] = useState(false);
 
   useEffect(() => {
+    if (isSavingLeaders) return;
     setExecKetua(getExecLeader('ketua', 'law-rojak', 'Rojak, S.H.', 'Ketua LBH Ansor Banten', '/images/rojak_ketua.jpg'));
     setExecSekretaris(getExecLeader('sekretaris', 'law-mulhat', 'Mulhat, S.H., M.H.', 'Sekretaris LBH Ansor Banten', '/images/mulhat_sekretaris.jpg'));
     setExecBendahara(getExecLeader('bendahara', 'law-dede', 'Dede Maulana Pasial, S.H., MH', 'Bendahara LBH Ansor Banten', '/images/dede_bendahara.jpg'));
   }, [lawyers]);
 
-  const handleSaveExecutiveLeaders = (e?: React.FormEvent) => {
+  const handleSaveExecutiveLeaders = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    onSaveLawyer(execKetua);
-    onSaveLawyer(execSekretaris);
-    onSaveLawyer(execBendahara);
-    setExecLeadersSaveMsg('Data & Foto Pimpinan Wilayah (Ketua, Sekretaris, Bendahara) berhasil disimpan!');
-    setTimeout(() => setExecLeadersSaveMsg(''), 4000);
+    setIsSavingLeaders(true);
+    try {
+      if (onSaveMultipleLawyers) {
+        await onSaveMultipleLawyers([execKetua, execSekretaris, execBendahara]);
+      } else {
+        onSaveLawyer(execKetua);
+        onSaveLawyer(execSekretaris);
+        onSaveLawyer(execBendahara);
+      }
+      setExecLeadersSaveMsg('Data nama, jabatan, dan foto Pimpinan Struktur Organisasi berhasil disimpan secara permanen!');
+    } catch (err) {
+      console.error('Error saving executive leaders:', err);
+      setExecLeadersSaveMsg('Terjadi kesalahan saat menyimpan pimpinan.');
+    } finally {
+      setIsSavingLeaders(false);
+      setTimeout(() => setExecLeadersSaveMsg(''), 4500);
+    }
   };
 
   // Settings form state
@@ -986,11 +1033,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                 <button
                   type="button"
+                  disabled={isSavingLeaders}
                   onClick={() => handleSaveExecutiveLeaders()}
-                  className="flex items-center gap-2 px-5 py-2.5 bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer shrink-0 transition-all self-start sm:self-center"
+                  className="flex items-center gap-2 px-5 py-2.5 bg-emerald-800 hover:bg-emerald-900 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer shrink-0 transition-all self-start sm:self-center"
                 >
-                  <Save className="w-4 h-4 text-amber-300" />
-                  <span>Simpan Pimpinan Organisasi</span>
+                  <Save className={`w-4 h-4 text-amber-300 ${isSavingLeaders ? 'animate-spin' : ''}`} />
+                  <span>{isSavingLeaders ? 'Menyimpan Pimpinan...' : 'Simpan Pimpinan Organisasi'}</span>
                 </button>
               </div>
 

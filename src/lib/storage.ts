@@ -44,8 +44,22 @@ function safeGet<T>(key: string, fallback: T): T {
 function safeSet<T>(key: string, data: T): void {
   try {
     localStorage.setItem(key, JSON.stringify(data));
-  } catch (err) {
+  } catch (err: any) {
     console.error(`Error saving key ${key} to storage:`, err);
+    // If quota exceeded, clean legacy storage keys and retry
+    if (err && (err.name === 'QuotaExceededError' || err.code === 22 || err.number === -2147024882)) {
+      console.warn('LocalStorage quota reached! Cleaning legacy cache items...');
+      try {
+        localStorage.removeItem('lbh_ansor_cases');
+        localStorage.removeItem('lbh_ansor_articles');
+        localStorage.removeItem('lbh_ansor_lawyers');
+        localStorage.removeItem('lbh_ansor_settings');
+        localStorage.removeItem('lbh_ansor_menu');
+        localStorage.setItem(key, JSON.stringify(data));
+      } catch (retryErr) {
+        console.error('Save failed even after clearing legacy keys:', retryErr);
+      }
+    }
   }
 }
 
@@ -252,10 +266,12 @@ export async function loadInitialData() {
   // If Vercel Database is active, attempt to fetch live remote data from Vercel KV / Storage
   if (isVercelDbConfigured()) {
     try {
-      const [remoteCases, remoteArticles, remoteSettings] = await Promise.all([
+      const [remoteCases, remoteArticles, remoteSettings, remoteLawyers, remoteBranches] = await Promise.all([
         loadFromVercelKv<CaseConsultation[]>('lbh_cases'),
         loadFromVercelKv<Article[]>('lbh_articles'),
         loadFromVercelKv<SiteSettings>('lbh_settings'),
+        loadFromVercelKv<Lawyer[]>('lbh_lawyers'),
+        loadFromVercelKv<BranchOffice[]>('lbh_branches'),
       ]);
 
       if (remoteCases && Array.isArray(remoteCases) && remoteCases.length > 0) {
@@ -266,6 +282,16 @@ export async function loadInitialData() {
       if (remoteArticles && Array.isArray(remoteArticles) && remoteArticles.length > 0) {
         articles = remoteArticles;
         safeSet(KEYS.ARTICLES, articles);
+      }
+
+      if (remoteLawyers && Array.isArray(remoteLawyers) && remoteLawyers.length > 0) {
+        lawyers = remoteLawyers;
+        safeSet(KEYS.LAWYERS, lawyers);
+      }
+
+      if (remoteBranches && Array.isArray(remoteBranches) && remoteBranches.length > 0) {
+        branches = remoteBranches;
+        safeSet(KEYS.BRANCHES, branches);
       }
 
       if (remoteSettings && typeof remoteSettings === 'object') {
