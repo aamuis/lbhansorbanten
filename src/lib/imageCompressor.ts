@@ -16,102 +16,98 @@ export async function compressImage(
   options: CompressImageOptions = {}
 ): Promise<string> {
   const {
-    maxWidth = 960,
-    maxHeight = 960,
-    quality = 0.82,
+    maxWidth = 800,
+    maxHeight = 800,
+    quality = 0.80,
     mimeType = 'image/jpeg',
   } = options;
 
   return new Promise((resolve) => {
-    let src = '';
-    let isObjectUrl = false;
+    // Helper to compress an image element once loaded
+    const compressLoadedImage = (img: HTMLImageElement, fallbackDataUrl: string) => {
+      try {
+        let width = img.naturalWidth || img.width;
+        let height = img.naturalHeight || img.height;
 
+        if (!width || !height) {
+          return resolve(fallbackDataUrl);
+        }
+
+        // Calculate new dimensions preserving aspect ratio
+        if (width > maxWidth || height > maxHeight) {
+          const ratio = Math.min(maxWidth / width, maxHeight / height);
+          width = Math.max(1, Math.round(width * ratio));
+          height = Math.max(1, Math.round(height * ratio));
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+
+        if (!ctx) {
+          return resolve(fallbackDataUrl);
+        }
+
+        // Fill white background for JPEGs
+        if (mimeType === 'image/jpeg') {
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, width, height);
+        }
+
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const result = canvas.toDataURL(mimeType, quality);
+        resolve(result);
+      } catch (err) {
+        console.warn('Canvas compression error, using fallback:', err);
+        resolve(fallbackDataUrl);
+      }
+    };
+
+    // If input is a string
     if (typeof fileOrDataUrl === 'string') {
-      // If it's an SVG or already a relative asset path, don't re-compress
       if (
         fileOrDataUrl.startsWith('data:image/svg') || 
         fileOrDataUrl.startsWith('/images/') ||
-        fileOrDataUrl.endsWith('.svg')
+        fileOrDataUrl.endsWith('.svg') ||
+        fileOrDataUrl.startsWith('http://') ||
+        fileOrDataUrl.startsWith('https://')
       ) {
         return resolve(fileOrDataUrl);
       }
-      src = fileOrDataUrl;
-    } else {
-      // It's a File or Blob
-      if (fileOrDataUrl.type === 'image/svg+xml') {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => resolve('');
-        reader.readAsDataURL(fileOrDataUrl);
-        return;
-      }
-      try {
-        src = URL.createObjectURL(fileOrDataUrl);
-        isObjectUrl = true;
-      } catch {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => resolve('');
-        reader.readAsDataURL(fileOrDataUrl);
-        return;
-      }
+
+      // If it's a data URL string
+      const img = new Image();
+      img.onload = () => compressLoadedImage(img, fileOrDataUrl);
+      img.onerror = () => resolve(fileOrDataUrl);
+      img.src = fileOrDataUrl;
+      return;
     }
 
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
+    // If input is a File or Blob
+    if (fileOrDataUrl.type === 'image/svg+xml') {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(fileOrDataUrl);
+      return;
+    }
 
-    img.onload = () => {
-      if (isObjectUrl) {
-        URL.revokeObjectURL(src);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const rawDataUrl = reader.result as string;
+      if (!rawDataUrl) {
+        return resolve('');
       }
 
-      let width = img.naturalWidth || img.width;
-      let height = img.naturalHeight || img.height;
-
-      if (!width || !height) {
-        return resolve(src);
-      }
-
-      // Calculate new dimensions preserving aspect ratio
-      if (width > maxWidth || height > maxHeight) {
-        const ratio = Math.min(maxWidth / width, maxHeight / height);
-        width = Math.max(1, Math.round(width * ratio));
-        height = Math.max(1, Math.round(height * ratio));
-      }
-
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-
-      if (!ctx) {
-        return resolve(src);
-      }
-
-      // White background for transparent PNGs converted to JPEG
-      if (mimeType === 'image/jpeg') {
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(0, 0, width, height);
-      }
-
-      ctx.drawImage(img, 0, 0, width, height);
-
-      try {
-        const result = canvas.toDataURL(mimeType, quality);
-        resolve(result);
-      } catch {
-        resolve(src);
-      }
+      const img = new Image();
+      img.onload = () => compressLoadedImage(img, rawDataUrl);
+      img.onerror = () => resolve(rawDataUrl);
+      img.src = rawDataUrl;
     };
-
-    img.onerror = () => {
-      if (isObjectUrl) {
-        URL.revokeObjectURL(src);
-      }
-      resolve(src);
-    };
-
-    img.src = src;
+    reader.onerror = () => resolve('');
+    reader.readAsDataURL(fileOrDataUrl);
   });
 }
 

@@ -27,6 +27,7 @@ const KEYS = {
   ARTICLES: 'lbh_ansor_articles_v2',
   LAWYERS: 'lbh_ansor_lawyers_v2',
   BRANCHES: 'lbh_ansor_branches_v2',
+  EXECUTIVE_LEADERS: 'lbh_ansor_exec_leaders_v3',
 };
 
 // Safe JSON parse helper
@@ -181,18 +182,77 @@ export function deleteStoredArticle(id: string): void {
   }
 }
 
+// ---------------- Executive Leaders (Ketua, Sekretaris, Bendahara) ----------------
+export interface ExecutiveLeadersRecord {
+  ketua?: Lawyer;
+  sekretaris?: Lawyer;
+  bendahara?: Lawyer;
+}
+
+export function getStoredExecutiveLeaders(): ExecutiveLeadersRecord {
+  return safeGet<ExecutiveLeadersRecord>(KEYS.EXECUTIVE_LEADERS, {});
+}
+
+export function saveStoredExecutiveLeaders(leaders: { ketua?: Lawyer; sekretaris?: Lawyer; bendahara?: Lawyer }): void {
+  const current = getStoredExecutiveLeaders();
+  const updated: ExecutiveLeadersRecord = {
+    ...current,
+    ...(leaders.ketua ? { ketua: leaders.ketua } : {}),
+    ...(leaders.sekretaris ? { sekretaris: leaders.sekretaris } : {}),
+    ...(leaders.bendahara ? { bendahara: leaders.bendahara } : {}),
+  };
+  safeSet(KEYS.EXECUTIVE_LEADERS, updated);
+
+  // Synchronize into KEYS.LAWYERS as well
+  const currentLawyers = safeGet<Lawyer[]>(KEYS.LAWYERS, initialLawyers);
+  let lawyerList = [...currentLawyers];
+  
+  const toSync = [leaders.ketua, leaders.sekretaris, leaders.bendahara].filter(Boolean) as Lawyer[];
+  for (const item of toSync) {
+    const idx = lawyerList.findIndex(l => l.id === item.id);
+    if (idx >= 0) {
+      lawyerList[idx] = item;
+    } else {
+      lawyerList.unshift(item);
+    }
+  }
+  safeSet(KEYS.LAWYERS, lawyerList);
+
+  if (isVercelDbConfigured()) {
+    saveToVercelKv('lbh_exec_leaders', updated).catch(() => {});
+    saveToVercelKv('lbh_lawyers', lawyerList).catch(() => {});
+  }
+}
+
 // ---------------- Lawyers ----------------
 export function getStoredLawyers(): Lawyer[] {
-  const stored = safeGet<Lawyer[]>(KEYS.LAWYERS, initialLawyers);
-  const storedIds = new Set(stored.map(l => l.id));
-  const coreLeaderIds = ['law-rojak', 'law-mulhat', 'law-dede'];
-  const missingLeaders = initialLawyers.filter(l => coreLeaderIds.includes(l.id) && !storedIds.has(l.id));
+  let stored = safeGet<Lawyer[]>(KEYS.LAWYERS, initialLawyers);
+  const execs = getStoredExecutiveLeaders();
   
-  if (missingLeaders.length > 0) {
-    const merged = [...missingLeaders, ...stored];
-    safeSet(KEYS.LAWYERS, merged);
-    return merged;
+  // If executive leaders were custom-saved, ensure they are merged with top priority
+  if (execs.ketua || execs.sekretaris || execs.bendahara) {
+    const execMap = new Map<string, Lawyer>();
+    if (execs.ketua) execMap.set(execs.ketua.id || 'law-rojak', execs.ketua);
+    if (execs.sekretaris) execMap.set(execs.sekretaris.id || 'law-mulhat', execs.sekretaris);
+    if (execs.bendahara) execMap.set(execs.bendahara.id || 'law-dede', execs.bendahara);
+
+    stored = stored.map(l => execMap.get(l.id) || l);
+    execMap.forEach((val, id) => {
+      if (!stored.some(l => l.id === id)) {
+        stored.unshift(val);
+      }
+    });
+  } else {
+    const storedIds = new Set(stored.map(l => l.id));
+    const coreLeaderIds = ['law-rojak', 'law-mulhat', 'law-dede'];
+    const missingLeaders = initialLawyers.filter(l => coreLeaderIds.includes(l.id) && !storedIds.has(l.id));
+    
+    if (missingLeaders.length > 0) {
+      stored = [...missingLeaders, ...stored];
+      safeSet(KEYS.LAWYERS, stored);
+    }
   }
+
   return stored;
 }
 
@@ -203,6 +263,15 @@ export function saveStoredLawyer(lawyer: Lawyer): void {
     ? current.map(l => l.id === lawyer.id ? lawyer : l)
     : [...current, lawyer];
   safeSet(KEYS.LAWYERS, updated);
+
+  // If this is an executive leader, update dedicated storage too
+  if (lawyer.id === 'law-rojak') {
+    saveStoredExecutiveLeaders({ ketua: lawyer });
+  } else if (lawyer.id === 'law-mulhat') {
+    saveStoredExecutiveLeaders({ sekretaris: lawyer });
+  } else if (lawyer.id === 'law-dede') {
+    saveStoredExecutiveLeaders({ bendahara: lawyer });
+  }
 
   if (isVercelDbConfigured()) {
     saveToVercelKv('lbh_lawyers', updated).catch(() => {});
@@ -266,12 +335,13 @@ export async function loadInitialData() {
   // If Vercel Database is active, attempt to fetch live remote data from Vercel KV / Storage
   if (isVercelDbConfigured()) {
     try {
-      const [remoteCases, remoteArticles, remoteSettings, remoteLawyers, remoteBranches] = await Promise.all([
+      const [remoteCases, remoteArticles, remoteSettings, remoteLawyers, remoteBranches, remoteExecs] = await Promise.all([
         loadFromVercelKv<CaseConsultation[]>('lbh_cases'),
         loadFromVercelKv<Article[]>('lbh_articles'),
         loadFromVercelKv<SiteSettings>('lbh_settings'),
         loadFromVercelKv<Lawyer[]>('lbh_lawyers'),
         loadFromVercelKv<BranchOffice[]>('lbh_branches'),
+        loadFromVercelKv<ExecutiveLeadersRecord>('lbh_exec_leaders'),
       ]);
 
       if (remoteCases && Array.isArray(remoteCases) && remoteCases.length > 0) {
@@ -282,6 +352,10 @@ export async function loadInitialData() {
       if (remoteArticles && Array.isArray(remoteArticles) && remoteArticles.length > 0) {
         articles = remoteArticles;
         safeSet(KEYS.ARTICLES, articles);
+      }
+
+      if (remoteExecs && (remoteExecs.ketua || remoteExecs.sekretaris || remoteExecs.bendahara)) {
+        safeSet(KEYS.EXECUTIVE_LEADERS, remoteExecs);
       }
 
       if (remoteLawyers && Array.isArray(remoteLawyers) && remoteLawyers.length > 0) {
@@ -329,6 +403,20 @@ export async function saveArticlesToStorage(articles: Article[]): Promise<void> 
 
 export async function saveLawyersToStorage(lawyers: Lawyer[]): Promise<void> {
   safeSet(KEYS.LAWYERS, lawyers);
+
+  // Also preserve executive leaders in dedicated storage
+  const ketua = lawyers.find(l => l.id === 'law-rojak');
+  const sekretaris = lawyers.find(l => l.id === 'law-mulhat');
+  const bendahara = lawyers.find(l => l.id === 'law-dede');
+  if (ketua || sekretaris || bendahara) {
+    const current = getStoredExecutiveLeaders();
+    saveStoredExecutiveLeaders({
+      ketua: ketua || current.ketua,
+      sekretaris: sekretaris || current.sekretaris,
+      bendahara: bendahara || current.bendahara,
+    });
+  }
+
   if (isVercelDbConfigured()) {
     saveToVercelKv('lbh_lawyers', lawyers).catch(() => {});
   }

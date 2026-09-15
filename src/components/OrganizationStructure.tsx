@@ -99,11 +99,14 @@ export const OrganizationStructure: React.FC<OrganizationStructureProps> = ({
                 <img
                   src={exec.photoUrl}
                   alt={exec.name}
+                  referrerPolicy="no-referrer"
                   className="w-full h-full object-cover object-top group-hover:scale-103 transition-transform duration-500"
                   onError={(e) => {
                     const target = e.target as HTMLImageElement;
-                    if (!target.src.includes('unsplash')) {
-                      target.src = 'https://images.unsplash.com/photo-1556157382-97eda2d62296?w=600&auto=format&fit=crop&q=80';
+                    const defaultFallbacks = ['/images/rojak_ketua.jpg', '/images/mulhat_sekretaris.jpg', '/images/dede_bendahara.jpg'];
+                    const defaultImg = defaultFallbacks[index] || '/images/rojak_ketua.jpg';
+                    if (target.src !== defaultImg && !target.src.endsWith(defaultImg)) {
+                      target.src = defaultImg;
                     }
                   }}
                 />

@@ -44,6 +44,7 @@ import {
 import { getWhatsAppSendUrl, getStatusLabelIndonesian } from '../lib/whatsapp';
 import { testVercelConnection, getVercelPostgresSqlSchema, isVercelDbConfigured } from '../lib/vercelDb';
 import { compressImage, getApproximateDataUrlSize } from '../lib/imageCompressor';
+import { saveStoredExecutiveLeaders } from '../lib/storage';
 
 // Reusable Image Uploader with Computer Upload (Base64) and Preset Logo Support
 interface ImageUploadFieldProps {
@@ -116,14 +117,17 @@ const ImageUploadField: React.FC<ImageUploadFieldProps> = ({
       </div>
       <div className="flex flex-col sm:flex-row gap-2.5 items-start sm:items-center">
         {/* Preview Thumbnail */}
-        <div className={`${previewHeight} rounded-xl bg-emerald-950/90 border-2 border-amber-400/80 p-1 flex items-center justify-center shrink-0 overflow-hidden shadow-xs relative group`}>
+        <div className={`${previewHeight} rounded-xl bg-emerald-950/90 border-2 border-amber-400/80 p-0.5 flex items-center justify-center shrink-0 overflow-hidden shadow-xs relative group`}>
           {value ? (
             <img 
+              key={value}
               src={value} 
               alt="Preview" 
-              className="w-full h-full object-contain"
+              referrerPolicy="no-referrer"
+              className="w-full h-full object-cover rounded-lg"
               onError={(e) => {
-                (e.target as HTMLElement).style.display = 'none';
+                const target = e.target as HTMLImageElement;
+                target.src = '/images/rojak_ketua.jpg';
               }} 
             />
           ) : (
@@ -289,31 +293,50 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [execBendahara, setExecBendahara] = useState<Lawyer>(() => getExecLeader('bendahara', 'law-dede', 'Dede Maulana Pasial, S.H., MH', 'Bendahara LBH Ansor Banten', '/images/dede_bendahara.jpg'));
   const [execLeadersSaveMsg, setExecLeadersSaveMsg] = useState('');
   const [isSavingLeaders, setIsSavingLeaders] = useState(false);
+  const [hasUnsavedLeaderChanges, setHasUnsavedLeaderChanges] = useState(false);
+  const [savingLeaderId, setSavingLeaderId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (isSavingLeaders) return;
+    // Never overwrite state if user is currently editing or has unsaved changes
+    if (isSavingLeaders || hasUnsavedLeaderChanges) return;
     setExecKetua(getExecLeader('ketua', 'law-rojak', 'Rojak, S.H.', 'Ketua LBH Ansor Banten', '/images/rojak_ketua.jpg'));
     setExecSekretaris(getExecLeader('sekretaris', 'law-mulhat', 'Mulhat, S.H., M.H.', 'Sekretaris LBH Ansor Banten', '/images/mulhat_sekretaris.jpg'));
     setExecBendahara(getExecLeader('bendahara', 'law-dede', 'Dede Maulana Pasial, S.H., MH', 'Bendahara LBH Ansor Banten', '/images/dede_bendahara.jpg'));
   }, [lawyers]);
 
-  const handleSaveExecutiveLeaders = async (e?: React.FormEvent) => {
+  const handleSaveExecutiveLeaders = async (e?: React.FormEvent, singleLeader?: Lawyer) => {
     if (e) e.preventDefault();
     setIsSavingLeaders(true);
+    if (singleLeader) {
+      setSavingLeaderId(singleLeader.id);
+    }
     try {
+      // 1. Direct synchronous atomic storage save for guaranteed persistence
+      saveStoredExecutiveLeaders({
+        ketua: execKetua,
+        sekretaris: execSekretaris,
+        bendahara: execBendahara,
+      });
+
+      // 2. React state sync in parent
+      const leadersList = singleLeader ? [singleLeader] : [execKetua, execSekretaris, execBendahara];
       if (onSaveMultipleLawyers) {
-        await onSaveMultipleLawyers([execKetua, execSekretaris, execBendahara]);
+        await onSaveMultipleLawyers(leadersList);
       } else {
-        onSaveLawyer(execKetua);
-        onSaveLawyer(execSekretaris);
-        onSaveLawyer(execBendahara);
+        for (const item of leadersList) {
+          await onSaveLawyer(item);
+        }
       }
-      setExecLeadersSaveMsg('Data nama, jabatan, dan foto Pimpinan Struktur Organisasi berhasil disimpan secara permanen!');
+      setHasUnsavedLeaderChanges(false);
+      setExecLeadersSaveMsg(singleLeader 
+        ? `Data ${singleLeader.name} berhasil disimpan secara permanen!` 
+        : 'Seluruh data nama, jabatan, dan foto Pimpinan Struktur Organisasi berhasil disimpan!');
     } catch (err) {
       console.error('Error saving executive leaders:', err);
       setExecLeadersSaveMsg('Terjadi kesalahan saat menyimpan pimpinan.');
     } finally {
       setIsSavingLeaders(false);
+      setSavingLeaderId(null);
       setTimeout(() => setExecLeadersSaveMsg(''), 4500);
     }
   };
@@ -1037,10 +1060,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   onClick={() => handleSaveExecutiveLeaders()}
                   className="flex items-center gap-2 px-5 py-2.5 bg-emerald-800 hover:bg-emerald-900 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md cursor-pointer shrink-0 transition-all self-start sm:self-center"
                 >
-                  <Save className={`w-4 h-4 text-amber-300 ${isSavingLeaders ? 'animate-spin' : ''}`} />
-                  <span>{isSavingLeaders ? 'Menyimpan Pimpinan...' : 'Simpan Pimpinan Organisasi'}</span>
+                  <Save className={`w-4 h-4 text-amber-300 ${isSavingLeaders && !savingLeaderId ? 'animate-spin' : ''}`} />
+                  <span>{isSavingLeaders && !savingLeaderId ? 'Menyimpan Pimpinan...' : 'Simpan Pimpinan Organisasi'}</span>
                 </button>
               </div>
+
+              {hasUnsavedLeaderChanges && (
+                <div className="p-3 bg-amber-50 border border-amber-300 text-amber-900 text-xs font-semibold rounded-xl flex items-center justify-between gap-3">
+                  <span className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                    Ada perubahan foto atau data pimpinan. Klik "Simpan Pimpinan Organisasi" atau tombol simpan pada masing-masing kartu untuk menyimpan secara permanen.
+                  </span>
+                  <button
+                    type="button"
+                    disabled={isSavingLeaders}
+                    onClick={() => handleSaveExecutiveLeaders()}
+                    className="px-3 py-1.5 bg-emerald-800 hover:bg-emerald-900 text-white rounded-lg text-xs font-bold shrink-0 cursor-pointer shadow-xs"
+                  >
+                    Simpan Sekarang
+                  </button>
+                </div>
+              )}
 
               {execLeadersSaveMsg && (
                 <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold rounded-xl flex items-center gap-2">
@@ -1051,120 +1091,192 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 pt-1">
                 {/* Ketua */}
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-emerald-900 uppercase tracking-wider flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
-                      1. Ketua Lembaga
-                    </span>
-                    <span className="text-[10px] text-slate-500 font-mono">law-rojak</span>
-                  </div>
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3 flex flex-col justify-between">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-emerald-900 uppercase tracking-wider flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                        1. Ketua Lembaga
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-mono">law-rojak</span>
+                    </div>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Nama Lengkap & Gelar</label>
-                    <input
-                      type="text"
-                      value={execKetua.name}
-                      onChange={(e) => setExecKetua({ ...execKetua, name: e.target.value })}
-                      className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs outline-none bg-white focus:ring-2 focus:ring-emerald-700"
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Nama Lengkap & Gelar</label>
+                      <input
+                        type="text"
+                        value={execKetua.name}
+                        onChange={(e) => {
+                          setExecKetua({ ...execKetua, name: e.target.value });
+                          setHasUnsavedLeaderChanges(true);
+                        }}
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs outline-none bg-white focus:ring-2 focus:ring-emerald-700"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Jabatan Resmi</label>
+                      <input
+                        type="text"
+                        value={execKetua.role}
+                        onChange={(e) => {
+                          setExecKetua({ ...execKetua, role: e.target.value });
+                          setHasUnsavedLeaderChanges(true);
+                        }}
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs outline-none bg-white focus:ring-2 focus:ring-emerald-700"
+                      />
+                    </div>
+
+                    <ImageUploadField
+                      label="Foto Ketua (File / URL)"
+                      value={execKetua.photoUrl}
+                      onChange={(val) => {
+                        setExecKetua({ ...execKetua, photoUrl: val });
+                        setHasUnsavedLeaderChanges(true);
+                      }}
+                      helpText="Gunakan foto portrait resmi jas/atribut LBH Ansor."
+                      previewHeight="h-16 w-14"
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Jabatan Resmi</label>
-                    <input
-                      type="text"
-                      value={execKetua.role}
-                      onChange={(e) => setExecKetua({ ...execKetua, role: e.target.value })}
-                      className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs outline-none bg-white focus:ring-2 focus:ring-emerald-700"
-                    />
+                  <div className="pt-3 border-t border-slate-200/80 flex items-center justify-between mt-2">
+                    <span className="text-[10px] text-slate-400 font-mono">Status: Pimpinan 1</span>
+                    <button
+                      type="button"
+                      disabled={isSavingLeaders}
+                      onClick={() => handleSaveExecutiveLeaders(undefined, execKetua)}
+                      className="px-3.5 py-1.5 bg-emerald-800 hover:bg-emerald-900 text-white text-[11px] font-bold rounded-lg shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Save className={`w-3.5 h-3.5 text-amber-300 ${savingLeaderId === execKetua.id ? 'animate-spin' : ''}`} />
+                      <span>{savingLeaderId === execKetua.id ? 'Menyimpan...' : 'Simpan Data Ketua'}</span>
+                    </button>
                   </div>
-
-                  <ImageUploadField
-                    label="Foto Ketua (File / URL)"
-                    value={execKetua.photoUrl}
-                    onChange={(val) => setExecKetua({ ...execKetua, photoUrl: val })}
-                    helpText="Gunakan foto portrait resmi jas/atribut LBH Ansor."
-                    previewHeight="h-16 w-14"
-                  />
                 </div>
 
                 {/* Sekretaris */}
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-emerald-900 uppercase tracking-wider flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
-                      2. Sekretaris Lembaga
-                    </span>
-                    <span className="text-[10px] text-slate-500 font-mono">law-mulhat</span>
-                  </div>
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3 flex flex-col justify-between">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-emerald-900 uppercase tracking-wider flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                        2. Sekretaris Lembaga
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-mono">law-mulhat</span>
+                    </div>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Nama Lengkap & Gelar</label>
-                    <input
-                      type="text"
-                      value={execSekretaris.name}
-                      onChange={(e) => setExecSekretaris({ ...execSekretaris, name: e.target.value })}
-                      className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs outline-none bg-white focus:ring-2 focus:ring-emerald-700"
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Nama Lengkap & Gelar</label>
+                      <input
+                        type="text"
+                        value={execSekretaris.name}
+                        onChange={(e) => {
+                          setExecSekretaris({ ...execSekretaris, name: e.target.value });
+                          setHasUnsavedLeaderChanges(true);
+                        }}
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs outline-none bg-white focus:ring-2 focus:ring-emerald-700"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Jabatan Resmi</label>
+                      <input
+                        type="text"
+                        value={execSekretaris.role}
+                        onChange={(e) => {
+                          setExecSekretaris({ ...execSekretaris, role: e.target.value });
+                          setHasUnsavedLeaderChanges(true);
+                        }}
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs outline-none bg-white focus:ring-2 focus:ring-emerald-700"
+                      />
+                    </div>
+
+                    <ImageUploadField
+                      label="Foto Sekretaris (File / URL)"
+                      value={execSekretaris.photoUrl}
+                      onChange={(val) => {
+                        setExecSekretaris({ ...execSekretaris, photoUrl: val });
+                        setHasUnsavedLeaderChanges(true);
+                      }}
+                      helpText="Gunakan foto portrait resmi jas/atribut LBH Ansor."
+                      previewHeight="h-16 w-14"
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Jabatan Resmi</label>
-                    <input
-                      type="text"
-                      value={execSekretaris.role}
-                      onChange={(e) => setExecSekretaris({ ...execSekretaris, role: e.target.value })}
-                      className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs outline-none bg-white focus:ring-2 focus:ring-emerald-700"
-                    />
+                  <div className="pt-3 border-t border-slate-200/80 flex items-center justify-between mt-2">
+                    <span className="text-[10px] text-slate-400 font-mono">Status: Pimpinan 2</span>
+                    <button
+                      type="button"
+                      disabled={isSavingLeaders}
+                      onClick={() => handleSaveExecutiveLeaders(undefined, execSekretaris)}
+                      className="px-3.5 py-1.5 bg-emerald-800 hover:bg-emerald-900 text-white text-[11px] font-bold rounded-lg shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Save className={`w-3.5 h-3.5 text-amber-300 ${savingLeaderId === execSekretaris.id ? 'animate-spin' : ''}`} />
+                      <span>{savingLeaderId === execSekretaris.id ? 'Menyimpan...' : 'Simpan Data Sekretaris'}</span>
+                    </button>
                   </div>
-
-                  <ImageUploadField
-                    label="Foto Sekretaris (File / URL)"
-                    value={execSekretaris.photoUrl}
-                    onChange={(val) => setExecSekretaris({ ...execSekretaris, photoUrl: val })}
-                    helpText="Gunakan foto portrait resmi jas/atribut LBH Ansor."
-                    previewHeight="h-16 w-14"
-                  />
                 </div>
 
                 {/* Bendahara */}
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-emerald-900 uppercase tracking-wider flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
-                      3. Bendahara Lembaga
-                    </span>
-                    <span className="text-[10px] text-slate-500 font-mono">law-dede</span>
-                  </div>
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3 flex flex-col justify-between">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-emerald-900 uppercase tracking-wider flex items-center gap-1">
+                        <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                        3. Bendahara Lembaga
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-mono">law-dede</span>
+                    </div>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Nama Lengkap & Gelar</label>
-                    <input
-                      type="text"
-                      value={execBendahara.name}
-                      onChange={(e) => setExecBendahara({ ...execBendahara, name: e.target.value })}
-                      className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs outline-none bg-white focus:ring-2 focus:ring-emerald-700"
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Nama Lengkap & Gelar</label>
+                      <input
+                        type="text"
+                        value={execBendahara.name}
+                        onChange={(e) => {
+                          setExecBendahara({ ...execBendahara, name: e.target.value });
+                          setHasUnsavedLeaderChanges(true);
+                        }}
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs outline-none bg-white focus:ring-2 focus:ring-emerald-700"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Jabatan Resmi</label>
+                      <input
+                        type="text"
+                        value={execBendahara.role}
+                        onChange={(e) => {
+                          setExecBendahara({ ...execBendahara, role: e.target.value });
+                          setHasUnsavedLeaderChanges(true);
+                        }}
+                        className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs outline-none bg-white focus:ring-2 focus:ring-emerald-700"
+                      />
+                    </div>
+
+                    <ImageUploadField
+                      label="Foto Bendahara (File / URL)"
+                      value={execBendahara.photoUrl}
+                      onChange={(val) => {
+                        setExecBendahara({ ...execBendahara, photoUrl: val });
+                        setHasUnsavedLeaderChanges(true);
+                      }}
+                      helpText="Gunakan foto portrait resmi jas/atribut LBH Ansor."
+                      previewHeight="h-16 w-14"
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Jabatan Resmi</label>
-                    <input
-                      type="text"
-                      value={execBendahara.role}
-                      onChange={(e) => setExecBendahara({ ...execBendahara, role: e.target.value })}
-                      className="w-full px-3 py-1.5 rounded-lg border border-slate-300 text-xs outline-none bg-white focus:ring-2 focus:ring-emerald-700"
-                    />
+                  <div className="pt-3 border-t border-slate-200/80 flex items-center justify-between mt-2">
+                    <span className="text-[10px] text-slate-400 font-mono">Status: Pimpinan 3</span>
+                    <button
+                      type="button"
+                      disabled={isSavingLeaders}
+                      onClick={() => handleSaveExecutiveLeaders(undefined, execBendahara)}
+                      className="px-3.5 py-1.5 bg-emerald-800 hover:bg-emerald-900 text-white text-[11px] font-bold rounded-lg shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Save className={`w-3.5 h-3.5 text-amber-300 ${savingLeaderId === execBendahara.id ? 'animate-spin' : ''}`} />
+                      <span>{savingLeaderId === execBendahara.id ? 'Menyimpan...' : 'Simpan Data Bendahara'}</span>
+                    </button>
                   </div>
-
-                  <ImageUploadField
-                    label="Foto Bendahara (File / URL)"
-                    value={execBendahara.photoUrl}
-                    onChange={(val) => setExecBendahara({ ...execBendahara, photoUrl: val })}
-                    helpText="Gunakan foto portrait resmi jas/atribut LBH Ansor."
-                    previewHeight="h-16 w-14"
-                  />
                 </div>
               </div>
             </div>
