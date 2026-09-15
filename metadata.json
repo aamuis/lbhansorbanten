@@ -1,0 +1,6 @@
+{
+  "name": "LBH Ansor Banten",
+  "description": "Lembaga Bantuan Hukum GP Ansor Wilayah Banten - Layanan konsultasi hukum online, direktori advokat, asisten cerdas Tanya ABI (Ansor Banten Intelligence), edukasi artikel hukum, dan manajemen kasus.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
